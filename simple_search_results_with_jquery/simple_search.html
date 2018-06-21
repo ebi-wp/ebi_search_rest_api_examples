@@ -1,0 +1,325 @@
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+
+<script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.3.1/jquery.js"></script>
+
+<style type="text/css">
+body {
+	padding: 20px;
+	font-family: Helvetica;
+	max-width: 700px;
+	display: block;
+	margin: auto;
+}
+
+a {
+	color: #636363;
+}
+
+a:visited {
+	color: #666;
+}
+
+a#close_selection_box {
+	cursor: pointer;
+}
+
+.hidden {
+	display: none;
+}
+
+#database-selection-box, #xref-selection-box {
+	background-color: #f6f8fa;
+	text-align: center;
+	padding: 16px;
+}
+
+#setting {
+	font-size: 12px;
+	font-family: "SF Mono", "Monaco", "Andale Mono", "Lucida Console";
+}
+
+#setting span {
+	font-weight: bold;
+}
+
+select#database {
+	min-width: 350px;
+}
+
+button {
+	background: #0084f0;
+	border: none;
+	border-radius: 5px;
+	padding: 2px 8px;
+	font-size: 12px;
+	color: #fff;
+}
+
+#search-box {
+	text-align: center;
+	font-size: 25px;
+}
+
+#search-box input#query {
+	min-width: 350px;
+}
+
+ul {
+	list-style-type: none;
+	padding: 0px;
+}
+
+ul li {
+	color: black;
+	clear: both;
+	font-size: 15px;
+	padding: 10px 7px 10px 7px;
+	line-height: 1.5em;
+}
+
+ul li:nth-child(odd) {
+	background-color: #eff0f1;
+	border-bottom: 1px solid #eff0f1;
+}
+
+ul li a.xref {
+	background: #cde6fb;
+	border: none;
+	border-radius: 5px;
+	padding: 2px 8px;
+	font-size: 12px;
+	text-decoration: none;
+	margin-left: 4px;
+	overflow-wrap: break-word;
+}
+
+</style>
+
+<title>jQuery + EBI Search API example</title>
+
+<script type="text/javascript">
+	window.onload = function() {
+		// find elements
+		var databaseSelectionBox = $("#database-selection-box");
+		var xrefSelectionBox = $("#xref-selection-box");
+		var searchBox = $("#search-box");
+		var settingDetails = $("#setting");
+
+		// some values for RESTful calls
+		var ebiSearchBaseURL = "https://wwwdev.ebi.ac.uk/ebisearch";
+		var restBaseURL = ebiSearchBaseURL + "/ws/rest/";
+		var database;
+		var includeXrefs;
+
+		$("select#database").click(function() {			
+			if ( $(this).data('clicks') == 1 ) {
+				// When one of options is selected
+				database = $(this).val();
+				updateSettings(database, includeXrefs);
+				$(this).data('clicks', 0);
+			} else {
+				// When select box is selected
+				$(this).data('clicks', 1);
+			}
+		});
+
+		$("div#xref-selection-box input:checkbox").on( "click",	function() {					
+			includeXrefs = $(this).val();
+			updateSettings(database, includeXrefs);
+		})				
+		
+		$("p#selected-database button").on("click", function() {
+			updateSettings(undefined, includeXrefs);
+		})
+
+		$("p#selected-xref button").on("click", function() {
+			updateSettings(database);
+		})
+
+		function updateSettings(db, includeXrefs) {
+			if (db !== undefined || includeXrefs !== undefined) {
+				clearResults();
+				searchBox.hide();
+
+				settingDetails.fadeIn();
+
+				if (db !== undefined ) {
+					$("#selected-database span").text(db);
+					databaseSelectionBox.hide();
+				}
+
+				if (includeXrefs !== undefined) {
+					$("#selected-xref").fadeIn();
+
+					if (includeXrefs === "y") { 
+						$("#selected-xref span").text("included");
+						$("#xref-selection-box input:checkbox[value=y]").prop(
+								"checked", true);
+						$("#xref-selection-box input:checkbox[value=n]").prop(
+								"checked", false);
+					} else {
+						$("#selected-xref span").text("not included");
+						$("#xref-selection-box input:checkbox[value=y]").prop(
+								"checked", false);
+						$("#xref-selection-box input:checkbox[value=n]").prop(
+								"checked", true);
+					}
+				}
+			}
+			else {
+				$("#selected-xref").hide();
+				settingDetails.hide();
+			}
+
+			openBox(db, includeXrefs);
+		}
+
+		function openBox(db, includeXrefs){
+			if (includeXrefs !== undefined && db === undefined) {
+				databaseSelectionBox.delay(350).fadeIn();
+				xrefSelectionBox.hide();
+			}
+			else if (includeXrefs === undefined  && db !== undefined) {
+				databaseSelectionBox.hide();
+				xrefSelectionBox.delay(350).fadeIn();
+			}
+			else if (includeXrefs !== undefined && db !== undefined) {
+				databaseSelectionBox.hide();
+				xrefSelectionBox.hide();
+				searchBox.fadeIn();
+			}
+			else {
+				databaseSelectionBox.delay(350).fadeIn();
+				xrefSelectionBox.hide();				
+			}
+		}
+
+		function getFieldsOf(db) {
+			if (db === "uniprot") {
+				return "descRecName,id";
+			}
+			return "name";
+		}
+
+		function clearResults() {
+			$("#results").hide();
+			$("#results h4 p").remove();
+			$("#results ul li").remove();
+			$("#error").hide();
+		}
+
+		$("#search-box button#search").on("click", function() {
+			clearResults();
+			var query = $("#search-box input#query").val();
+			var fields = getFieldsOf(database);
+			var url = restBaseURL + database;
+			$.getJSON(url, {
+					size : 20,
+					query : query,
+					fieldurl : true,
+					fields : fields,
+					format : "json"
+				}).done(function(data) {
+					$("#results").fadeIn();
+					$("#results h4")
+							.append($("<p>")
+							.text("Top 20 of " + data.hitCount + " "+ database + " entries are shown.")
+							.css("text-align","center")
+							.css("color","#636363"));
+					
+					$.each(data.entries, function(i, entry) {
+						var li = $("<li>");
+						var fieldIds = getFieldsOf(database).split(",");
+						var text = "";
+						
+						$.each(fieldIds, function(i, f) { text += entry.fields[f][0] + " "; });
+						li.append($("<a>")
+							.text(text)
+							.attr("href", entry.fieldURLs[0].value));
+
+						$("#results ul").append(li);
+
+						if (includeXrefs === "y")
+							xrefSearch(entry.id,li);
+					});
+				}).fail(function(data) {
+					// show error message
+					$("#error p").remove();
+					$("#error").append($("<p>").text(data.responseJSON.diagnostics.message)).show();
+				});
+		})
+
+		function xrefSearch(entryId, el) {
+			var url = restBaseURL + database + "/entry/" + entryId + "/xref";
+			$.getJSON(url, {
+				format : "json"
+			}).done(
+					function(data) {
+						$.each(data.domains, function(i, d) {
+							var link = $("<a>");
+							link.text(d.id + "(" + d.referenceEntryCount + ")")
+									.attr(
+											"href",
+											ebiSearchBaseURL
+													+ "/crossrefsearch.ebi?db="
+													+ database + "&id="
+													+ entryId + "&ref=" + d.id)
+									.addClass("xref")
+									.attr("target", "_blank");
+							el.append(link);
+						});
+					});
+		}
+
+	}
+
+</script>
+
+
+</head>
+
+<body>
+	<div id="setting" class="hidden">
+		<p id="selected-database">
+			&gt;&gt; Selected database is <span></span>.
+			<button>change?</button>
+		</p>
+		<p id="selected-xref" class="hidden">
+			&gt;&gt; Cross-references are <span></span>.
+			<button>change?</button>
+		</p>
+	</div>
+
+	<div id="database-selection-box">
+		<h3>Which database do you search against?</h3>
+		<select id="database">
+			<option disabled selected value="" class="hidden"></option>
+			<option value="europepmc">Europe PMC</option>
+			<option value="uniprot">UniProtKB</option>
+		</select>
+	</div>
+
+	<div id="xref-selection-box" class="hidden">
+		<h3>Do you want cross-references?</h3>
+		<input id="xrefs" value="y" type="checkbox"><label for="xrefs">Yes</label>
+		<input id="xrefs" value="n" type="checkbox"><label for="xrefs">No, maybe later</label>
+		<a id="close_selection_box" class="hidden" onclick="close()" id="x">x</a>
+	</div>
+
+	<div id="search-box" class="hidden">
+		<h3>Try EBI Search</h3>
+		<input id="query" value="Zika virus sequences" type="text">
+		<button id="search">Search</button>
+	</div>
+
+	<div id="results" class="hidden">
+		<h3></h3>
+		<ul></ul>
+	</div>
+
+	<div id="error" class="hidden"></div>
+
+</body>
+</html>
