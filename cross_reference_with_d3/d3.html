@@ -1,0 +1,278 @@
+<html xmlns:xlink="http://www.w3.org/1999/xlink">
+<meta charset="utf-8">
+
+<style>
+.node {
+	fill: #000;
+	cursor: pointer;
+}
+
+.clicked {
+	cursor: auto;
+}
+
+.link {
+	stroke: #999;
+}
+
+text {
+	font: 10px sans-serif;
+	cursor: pointer;
+	text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff;
+}
+
+.uniprot { color: #5cadcb; }
+.europepmc { color:#e20f1a; } 
+.omim { color: #999; }
+
+body {
+	font-family: Helvetica;
+	display: block;
+	margin: auto;
+	max-width: 1000px;
+}
+
+svg {
+	display: block;
+	margin: auto;
+}
+
+div#search-box {
+	text-align: center;
+	margin-top: 10px;
+}
+
+li {
+	list-style-type: none;
+}
+
+input#button {
+	background: #0084f0;
+	border: none;
+	border-radius: 5px;
+	padding: 2px 8px;
+	font-size: 12px;
+	color: #fff;
+}
+
+</style>
+<body>
+
+	<div id="search-box">
+		<h3>Explore Protein sequences (UniProtKB) using cross-reference network built by EBI Search</h3>
+		Start with an UniProtKB entry : <input id="id" type="text" value="TYRO_HUMAN">
+		using cross-references 
+		<select id="refdb">
+			<option selected value="europepmc">EuropePMC</option>
+			<option value="omim">OMIM</option>
+		</select>
+		<input id="button" type="button" value="Restart" onclick="updateData()">
+	</div>
+
+	<div>
+		<ul>
+			<li class="uniprot" id="uniprot">UniProtKB <span>(1)</span></li>
+			<li class="europepmc" id="europepmc">EuropePMC<span></span></li>
+			<li class="omim" id="omim">OMIM<span></span></li>
+		</ul>
+	</div>
+
+	<script src="//d3js.org/d3.v3.min.js"></script>
+	<script>
+		var id = document.getElementById("id").value;
+		var db = "uniprot";
+
+		var refDbs = [ "uniprot", "europepmc" ];
+
+		var nodeDefaults = {
+				uniprot:  { name: "UniProtKB", fill: "#5cadcb", titleField : "desRecName", r:8},
+				europepmc:{ name: "EuropePMC", fill: "#e20f1a", titleField : "name", r:5},
+				omim:     { name: "OMIM", fill: "#999", titleField : "title", r:5}
+		}
+		
+		var width = 960, height = 600;
+
+		var force = d3.layout.force().size([ width, height ]).nodes([ {
+			id : id,
+			db : db,
+			url : "https://www.uniprot.org/uniprot/" + id
+		} ]) // initialize with a single node
+		.linkDistance(100).charge(-300).on("tick", tick);
+
+		var svg = d3.select("body")
+					.append("svg")
+					.attr("width", width)
+					.attr("height", height);
+
+		var nodes = force.nodes(),
+			links = force.links(),
+			node = svg.selectAll(".node"),
+			link = svg.selectAll(".link"),
+			text = svg.selectAll(".text");
+
+		restart();
+
+		function contains(nodes, node) {
+			var i = nodes.length;
+			while (i--) {
+				if (nodes[i].id === node.id && nodes[i].db === node.db) {
+					return nodes[i];
+				}
+			}
+			return undefined;
+		}
+
+		function mousedown(d) {
+			if ( d3.select(this).attr("class").indexOf("clicked") < 0) {
+				d3.select(this).classed("clicked", true);
+	
+				refDbs.forEach(function(rdb) {
+					var url = "http://www.ebi.ac.uk/ebisearch/ws/rest/" + d.db
+							+ "/entry/" + d.id + "/xref/" + rdb + "?fieldurl=true&fields=" + nodeDefaults[rdb].titleField;
+					d3.json(url, function(data) {
+						data.entries[0].references.forEach(function(r) {
+							var node = {
+								db : r.source,
+								id : r.id,
+								url : r.fieldURLs[0].value
+							};
+							
+							var title = getTitle(r);
+							node["title"] = title;
+	
+							var found = contains(nodes, node);
+	
+							if (found === undefined) {
+								n = nodes.push(node);
+								links.push({
+									source : d,
+									target : node
+								});
+							} else {
+								links.push({
+									source : d,
+									target : found
+								});
+							}
+						});
+	
+						restart();
+					});
+				});
+			}
+		}
+
+		function tick() {
+			link.attr("x1", function(d) {
+				return d.source.x;
+			}).attr("y1", function(d) {
+				return d.source.y;
+			}).attr("x2", function(d) {
+				return d.target.x;
+			}).attr("y2", function(d) {
+				return d.target.y;
+			});
+
+			node.attr("cx", function(d) {
+				return d.x;
+			}).attr("cy", function(d) {
+				return d.y;
+			});
+
+			text.attr("transform", transform);
+		}
+
+		function transform(d) {
+			return "translate(" + d.x + "," + d.y + ")";
+		}
+
+		function restart() {
+			link = link.data(links);
+
+			link.enter().insert("line", ".node").attr("class", "link");
+
+			link.exit().remove();
+
+			node = node.data(nodes);
+
+			node.enter().insert("circle", ".cursor").classed('clicked', false).attr("class", "node")
+				.attr("r", function(d) { return rsize(d.db); })
+				.style("fill", function(d) { return nodeDefaults[d.db].fill; })
+				.on("mousedown", mousedown).append("title").text(function(d) { return d.title; });
+
+			node.exit().remove();
+
+			text = text.data(nodes);
+
+			text.enter()
+		    	.insert("text", ".text")		    	
+				.attr("x", 8)
+				.attr("y", ".31em").text(function(d) { return d.id; })
+				.style('pointer-events', 'auto')
+				.on("click", function(d){
+				      window.open(d.url, "_blank");
+				    });
+
+			text.exit().remove();
+
+			force.start();
+
+			updateStatistics();
+		}
+
+		function rsize (d) { return nodeDefaults[d].r }
+		function fill (d) { return nodeDefaults[d].fill; }
+
+		function getTitle(refEntry){			
+			var titleField = nodeDefaults[refEntry.source].titleField;
+			var names = refEntry.fields[titleField];
+			if (names !== undefined && names.length > 0)
+				return names[0];
+			return "";
+		}
+
+		function updateData() {
+			id = document.getElementById("id").value;
+			var e = document.getElementById("refdb");
+			var refDB = e.options[e.selectedIndex].value;
+			refDbs = [db , refDB];
+
+			links.splice(0, links.length);
+			nodes.splice(0, nodes.length);
+
+			restart();
+			nodes.push({
+				id : id,
+				db : db
+			});
+			restart();
+
+			modes = [ {
+				id : id,
+				db : db
+			} ];
+			restart();
+		}
+		
+		function updateStatistics() {
+			 var list = d3.selectAll(".node");
+			 var counts = {};
+			 list[0].forEach(function(l){
+				 var dbname = l.__data__.db;
+				 if ( counts[dbname] !== undefined) {
+					 counts[dbname] += 1;
+				 }
+				 else {
+					 counts[dbname] = 1;
+				 }
+				 document.getElementById(dbname).children.item(0).innerHTML = "(" + counts[dbname] + ")";
+			 });
+			 
+
+			 
+		}
+	</script>
+
+
+
+</body>
